@@ -19,6 +19,7 @@ const MAX_MESSAGE_SIZE = 1024;
 const MIN_MESSAGE_INTERVAL = 500;
 
 const DIRETORIO_PUBLICO = path.join(__dirname, 'public');
+const PREFIXO = '/site';
 
 // ========================================
 // TIPOS MIME
@@ -62,7 +63,27 @@ const httpServer = http.createServer((req, res) => {
         return;
     }
 
-    const caminho = rota === '/' ? '/index.html' : rota;
+    // ========================================
+    // TRATAMENTO DO PREFIXO /site
+    // ========================================
+
+    let caminho = rota;
+
+    // Remove o prefixo /site
+    if (caminho === PREFIXO || caminho === PREFIXO + '/') {
+        caminho = '/';
+    } else if (caminho.startsWith(PREFIXO + '/')) {
+        caminho = caminho.slice(PREFIXO.length);
+    }
+
+    // Página inicial
+    if (caminho === '/') {
+        caminho = '/index.html';
+    }
+
+    // ========================================
+    // LOCALIZACAO DO ARQUIVO
+    // ========================================
 
     const arquivo = path.resolve(
         DIRETORIO_PUBLICO,
@@ -70,12 +91,16 @@ const httpServer = http.createServer((req, res) => {
     );
 
     // Protecao contra acesso fora de public
-    if (!arquivo.startsWith(DIRETORIO_PUBLICO + path.sep)) {
+    if (
+        arquivo !== DIRETORIO_PUBLICO &&
+        !arquivo.startsWith(DIRETORIO_PUBLICO + path.sep)
+    ) {
         res.writeHead(403);
         res.end('Acesso negado');
         return;
     }
 
+    // Identifica o tipo do arquivo
     const tipo = tiposMime[path.extname(arquivo).toLowerCase()];
 
     if (!tipo) {
@@ -84,11 +109,24 @@ const httpServer = http.createServer((req, res) => {
         return;
     }
 
+    // ========================================
+    // LEITURA E ENVIO DO ARQUIVO
+    // ========================================
+
     fs.readFile(arquivo, (erro, conteudo) => {
 
         if (erro) {
-            res.writeHead(404);
-            res.end('Arquivo nao encontrado');
+
+            if (erro.code === 'ENOENT' || erro.code === 'ENOTDIR') {
+                res.writeHead(404);
+                res.end('Arquivo nao encontrado');
+                return;
+            }
+
+            console.error('Erro ao ler arquivo:', erro);
+
+            res.writeHead(500);
+            res.end('Erro interno do servidor');
             return;
         }
 
@@ -202,7 +240,9 @@ wsServer.on('connection', (cliente) => {
 
         const texto = mensagem.toString();
 
+        // ========================================
         // AUTENTICACAO DO SENSOR
+        // ========================================
 
         if (cliente.tipo === 'visualizador') {
 
@@ -244,7 +284,9 @@ wsServer.on('connection', (cliente) => {
             return;
         }
 
+        // ========================================
         // RECEBIMENTO DAS LEITURAS
+        // ========================================
 
         if (cliente !== sensorAtual) {
             cliente.close(1008, 'Sem permissao');
@@ -278,7 +320,9 @@ wsServer.on('connection', (cliente) => {
 
         console.log('Leitura recebida:', leitura);
 
+        // ========================================
         // DISTRIBUICAO PARA OS NAVEGADORES
+        // ========================================
 
         const mensagemJSON = JSON.stringify({
             lux: leitura.lux,
@@ -301,7 +345,9 @@ wsServer.on('connection', (cliente) => {
 
     });
 
+    // ========================================
     // ENCERRAMENTO DA CONEXAO
+    // ========================================
 
     cliente.on('close', () => {
 
@@ -332,6 +378,7 @@ httpServer.listen(PORT, HOST, () => {
 
     console.log(`Servidor HTTP: porta ${PORT}`);
     console.log(`Servidor WebSocket: porta ${PORT}`);
+    console.log(`Prefixo do site: ${PREFIXO}`);
 
     console.log('Aguardando conexoes...');
 
